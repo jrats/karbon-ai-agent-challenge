@@ -16,6 +16,7 @@ import subprocess
 import pandas as pd
 import importlib.util
 import sys
+import time
 from dataclasses import dataclass
 from openai import OpenAI
 
@@ -133,6 +134,7 @@ def tester(state: AgentState) -> AgentState:
     """
     Run pytest. If failed, re-run parser manually and add diagnostics.
     """
+
     success, logs = run_pytest()
 
     if not success:
@@ -143,18 +145,19 @@ def tester(state: AgentState) -> AgentState:
             sys.modules['bank_parser'] = mod
             spec.loader.exec_module(mod)
 
-
             actual = mod.parse(state.pdf_path)
             expected = pd.read_csv(state.csv_path)
 
-            #comparison summary between actual and expected
+            # comparison summary between actual and expected
             summary = compare_and_summarize(expected, actual)
             logs += "\n [Agent Diagnostics]" + summary
+
         except Exception as e:
             logs += f"\n[Agent Diagnostics Error] Could not run manual comparison: {e}"
 
     state.success = success
     state.logs = logs
+
     return state
 
 def fixer(state: AgentState) -> AgentState:
@@ -206,6 +209,37 @@ def build_graph(max_attempts: int=3):
     return graph.compile()
 
 ## Utilities ##
+
+def invoke_with_timing(graph, state: AgentState, max_attempts: int = 3) -> AgentState:
+    """
+    Run the LangGraph workflow with per-attempt timing and row-match updates.
+    """
+    for attempt in range(1, max_attempts + 1):
+        state.attempts = attempt
+        attempt_start = time.perf_counter()
+
+        result_dict = graph.invoke(state)
+        state = AgentState(**result_dict)
+
+        elapsed = time.perf_counter() - attempt_start
+
+        #Extracting row match info from logs
+        rows_matched = ""
+        for line in state.logs.split('\n'):
+            if 'rows match exactly' in line:
+                rows_matched = line.strip()
+                break 
+        
+        #CLI update per attempt
+        status = 'SUCCESS!' if state.success else 'FAILED, moving to next attempt.'
+        print(f'Attempt {attempt}: {status} {rows_matched} (Time taken: {elapsed:.2f}s)')
+
+        # Stop early if parser succeeded or proceed till final attempts
+        if state.success or attempt >= max_attempts:
+            break
+
+    return state 
+
 def infer_csv_schema(csv_path):
     """
     Infer schema string from CSV (colname + dtype).
@@ -239,13 +273,20 @@ def main():
     )
 
     final_graph = build_graph(max_attempts=3)
-    final_state = AgentState(**final_graph.invoke(state))
 
+    total_start = time.time()
+    final_state = invoke_with_timing(final_graph, state, max_attempts=3)
+    total_elapsed = time.time() - total_start
+
+
+    print("\n---Workflow Summary---")
     if final_state.success:
         print(f"Parser for {bank} works! Saved at {parser_file}")
     else:
         print("All attempts failed. See logs below:")
         print(final_state.logs)
+
+    print(f"Total workflow time: {total_elapsed:.2f}s")
 
 if __name__ == "__main__":
     main()
