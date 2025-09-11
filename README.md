@@ -65,23 +65,5 @@ Fixer: Calls the LLM to repair the parser based on test logs and mismatches.
 
 The workflow loops from Tester → Fixer → Executor until either the parser succeeds or the maximum number of attempts is reached. Successful parsers are cached for future reuse, reducing redundant LLM calls.
 
-       ┌─────────┐
-       │ CodeGen │
-       └────┬────┘
-            │
-            ▼
-       ┌──────────┐
-       │ Executor │◄──────────────┐
-       └────┬─────┘               │
-            │                     │
-            ▼                     │
-       ┌────────┐                 │
-       │ Tester │                 │
-       └───┬────┘                 │
-   Success │ Fail / Max retries   │
-           │                      │
-   ┌───────▼────────┐             │
-   │     Fixer      │─────────────┘
-   └────────────────┘
 
 
