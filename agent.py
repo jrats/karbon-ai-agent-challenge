@@ -12,6 +12,7 @@ Uses a dataclass AgentState for cleaner state handling.
 
 import argparse
 import os
+import shutil
 import subprocess
 import pandas as pd
 import importlib.util
@@ -56,6 +57,13 @@ def run_pytest() -> tuple[bool, str]:
     except Exception as e:
         return False, str(e)
     
+## Cache utility functions ##
+def get_cache_path(bank:str) -> str:
+    """Return path for cached successful parser."""
+    cache_dir = os.path.join('cache', bank)
+    os.makedirs(cache_dir, exist_ok=True)
+    return os.path.join(cache_dir, "success.py")
+
 
 ## Agent State ##
 @dataclass
@@ -75,6 +83,7 @@ class AgentState:
     parser_file: str = ""      # file path to parser
 
 
+## Comparison ##
 def compare_and_summarize(expected: pd.DataFrame, actual: pd.DataFrame) -> str:
     """
     Compare two DataFrames and return human-readable mismatch summary.
@@ -117,6 +126,16 @@ def codegen(state: AgentState) -> AgentState:
     """
     Generate parser code from LLM using bank-specific prompt.
     """
+    #Reuse if successful parser from previous attempts is present.
+    success_cache = get_cache_path(state.bank)
+    if os.path.exists(success_cache):
+        with open(success_cache, "r") as f:
+            state.code = f.read()
+        print(f"[Cache] Loaded successful parser for {state.bank}")
+        state.success = True
+        return state
+    
+    # Else call to the LLM
     prompt = codegen_template.format(
         bank_name=state.bank, pdf_path=state.pdf_path, csv_path=state.csv_path, csv_schema=state.csv_schema
     )
@@ -214,13 +233,16 @@ def invoke_with_timing(graph, state: AgentState, max_attempts: int = 3) -> Agent
     """
     Run the LangGraph workflow with per-attempt timing and row-match updates.
     """
+    total_start = time.perf_counter()
+
     for attempt in range(1, max_attempts + 1):
+        if state.success:
+            break      #codegen produces right output in first attempt
+
         state.attempts = attempt
         attempt_start = time.perf_counter()
-
         result_dict = graph.invoke(state)
         state = AgentState(**result_dict)
-
         elapsed = time.perf_counter() - attempt_start
 
         #Extracting row match info from logs
@@ -235,9 +257,19 @@ def invoke_with_timing(graph, state: AgentState, max_attempts: int = 3) -> Agent
         print(f'Attempt {attempt}: {status} {rows_matched} (Time taken: {elapsed:.2f}s)')
 
         # Stop early if parser succeeded or proceed till final attempts
-        if state.success or attempt >= max_attempts:
+        if state.success:
             break
 
+    # Cache the successful parser if any  
+    if state.success:
+        cache_file = get_cache_path(state.bank)
+        write_file(cache_file, state.code)
+        print(f"[Cache] Saved successful parser for {state.bank}")
+    else:
+        print("[Cache] No successful parser; cache not updated.")
+
+    total_elapsed = time.perf_counter() - total_start
+    print(f"\nTotal workflow time: {total_elapsed:.2f}s")
     return state 
 
 def infer_csv_schema(csv_path):
@@ -252,7 +284,6 @@ def main():
     """
     CLI entry: build agent state and run graph.
     """
-
     parser = argparse.ArgumentParser()
     parser.add_argument("--target", required=True, help="Bank name (e.g., icici)")
     args = parser.parse_args()
@@ -261,7 +292,6 @@ def main():
     pdf_path = f"data/{bank}/{bank} sample.pdf"
     csv_path = f"data/{bank}/result.csv"
     parser_file = f"custom_parsers/{bank}_parser.py"
-
     csv_schema = infer_csv_schema(csv_path)
 
     state = AgentState(
@@ -273,11 +303,7 @@ def main():
     )
 
     final_graph = build_graph(max_attempts=3)
-
-    total_start = time.time()
     final_state = invoke_with_timing(final_graph, state, max_attempts=3)
-    total_elapsed = time.time() - total_start
-
 
     print("\n---Workflow Summary---")
     if final_state.success:
@@ -285,8 +311,6 @@ def main():
     else:
         print("All attempts failed. See logs below:")
         print(final_state.logs)
-
-    print(f"Total workflow time: {total_elapsed:.2f}s")
 
 if __name__ == "__main__":
     main()
