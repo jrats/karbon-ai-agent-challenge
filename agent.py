@@ -10,21 +10,22 @@ Nodes:
 Uses a dataclass AgentState for cleaner state handling.
 """
 
-import argparse
+
 import os
-import shutil
+import sys
+import time
+import argparse
 import subprocess
 import pandas as pd
 import importlib.util
-import sys
-import time
 from dataclasses import dataclass
 from openai import OpenAI
-
-from langgraph.graph import StateGraph, END # type: ignore
+from langgraph.graph import StateGraph, END 
 from prompts import codegen_template, fixer_template 
 
 client = OpenAI()
+
+## Helper functions ##
 
 def call_llm(prompt: str) -> str:
     """
@@ -37,7 +38,7 @@ def call_llm(prompt: str) -> str:
     )
     return response.choices[0].message.content
 
-def write_file(path: str, content: str):
+def write_file(path: str, content: str) -> None:
     """
     Write text content to a file, creating directories if needed.
     """
@@ -58,14 +59,15 @@ def run_pytest() -> tuple[bool, str]:
         return False, str(e)
     
 ## Cache utility functions ##
+
 def get_cache_path(bank:str) -> str:
     """Return path for cached successful parser."""
     cache_dir = os.path.join('cache', bank)
     os.makedirs(cache_dir, exist_ok=True)
     return os.path.join(cache_dir, "success.py")
 
-
 ## Agent State ##
+
 @dataclass
 class AgentState:
     """
@@ -82,8 +84,8 @@ class AgentState:
     csv_schema: str = ""       # schema string (column names+ dtypes)
     parser_file: str = ""      # file path to parser
 
-
 ## Comparison ##
+
 def compare_and_summarize(expected: pd.DataFrame, actual: pd.DataFrame) -> str:
     """
     Compare two DataFrames and return human-readable mismatch summary.
@@ -122,6 +124,7 @@ def compare_and_summarize(expected: pd.DataFrame, actual: pd.DataFrame) -> str:
 
 
 ## Node implementations ##
+
 def codegen(state: AgentState) -> AgentState:
     """
     Generate parser code from LLM using bank-specific prompt.
@@ -195,6 +198,7 @@ def fixer(state: AgentState) -> AgentState:
     return state
 
 ## Build the graph ##
+
 def build_graph(max_attempts: int=3):
     """
     Build LangGraph with CodeGen → Executor → Tester → Fixer loop.
@@ -279,7 +283,8 @@ def infer_csv_schema(csv_path):
     df = pd.read_csv(csv_path)
     return ",".join([f"{c} ({df[c].dtype})" for c in df.columns])
 
-## Main ##
+## Main Function ##
+
 def main():
     """
     CLI entry: build agent state and run graph.

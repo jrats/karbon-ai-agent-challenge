@@ -1,3 +1,7 @@
+# Python cache and generated folders
+__pycache__/
+cache/
+custom_parsers/
 # Python virtual environments
 venv/
 .venv/
