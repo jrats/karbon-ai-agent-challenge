@@ -1,73 +1,93 @@
-import pandas as pd
 import pdfplumber
+import pandas as pd
 import re
 from typing import List, Dict, Any
 
 def parse(pdf_path: str) -> pd.DataFrame:
+    """
+    Parse the ICICI bank statement PDF and return a DataFrame with transaction details.
+
+    Args:
+        pdf_path (str): The path to the PDF file to be parsed.
+
+    Returns:
+        pd.DataFrame: A DataFrame containing the parsed transaction data.
+    """
     transactions = []
-    headers_seen = set()
+    headers = ["Date", "Description", "Debit Amt", "Credit Amt", "Balance"]
 
     with pdfplumber.open(pdf_path) as pdf:
         for page in pdf.pages:
+            # Try to extract tables first
             tables = page.extract_tables()
             if tables:
                 for table in tables:
                     for row in table:
-                        if is_header_row(row) and tuple(row) in headers_seen:
+                        if row == headers or not any(row):  # Skip header and empty rows
                             continue
-                        headers_seen.add(tuple(row))
-                        transaction = parse_table_row(row)
-                        if transaction:
-                            transactions.append(transaction)
+                        transactions.append(parse_row(row))
             else:
+                # Fallback to text extraction
                 text = page.extract_text()
                 if text:
                     for line in text.split('\n'):
-                        transaction = parse_text_line(line)
-                        if transaction:
-                            transactions.append(transaction)
+                        row = parse_line(line)
+                        if row:
+                            transactions.append(row)
 
-    df = pd.DataFrame(transactions)
-    df = clean_dataframe(df)
+    # Create DataFrame and remove duplicate headers
+    df = pd.DataFrame(transactions, columns=headers)
+    df = df[~df['Date'].isin(headers)]  # Remove repeated headers
+    df['Date'] = pd.to_datetime(df['Date'], format='%d-%m-%Y', errors='coerce').dt.strftime('%d-%m-%Y')
+    df['Debit Amt'] = pd.to_numeric(df['Debit Amt'].replace('', pd.NA), errors='coerce')
+    df['Credit Amt'] = pd.to_numeric(df['Credit Amt'].replace('', pd.NA), errors='coerce')
+    df['Balance'] = pd.to_numeric(df['Balance'].replace('', pd.NA), errors='coerce')
+
     return df
 
-def is_header_row(row: List[str]) -> bool:
-    return all(re.match(r'^\s*Date\s*$', cell) or re.match(r'^\s*Description\s*$', cell) or 
-               re.match(r'^\s*Debit Amt\s*$', cell) or re.match(r'^\s*Credit Amt\s*$', cell) or 
-               re.match(r'^\s*Balance\s*$', cell) for cell in row)
+def parse_row(row: List[str]) -> Dict[str, Any]:
+    """
+    Parse a row from the table into a dictionary.
 
-def parse_table_row(row: List[str]) -> Dict[str, Any]:
-    if len(row) < 5:
-        return None
+    Args:
+        row (List[str]): A list representing a row from the table.
+
+    Returns:
+        Dict[str, Any]: A dictionary with parsed transaction details.
+    """
+    date = row[0]
+    description = row[1]
+    debit = row[2] if len(row) > 2 else ''
+    credit = row[3] if len(row) > 3 else ''
+    balance = row[4] if len(row) > 4 else ''
+    
     return {
-        'Date': row[0].strip(),
-        'Description': row[1].strip(),
-        'Debit Amt': parse_amount(row[2].strip()) if row[2].strip() not in ['Debit Amt', ''] else None,
-        'Credit Amt': parse_amount(row[3].strip()) if row[3].strip() not in ['Credit Amt', ''] else None,
-        'Balance': parse_amount(row[4].strip()) if row[4].strip() not in ['Balance', ''] else None
+        "Date": date,
+        "Description": description,
+        "Debit Amt": debit,
+        "Credit Amt": credit,
+        "Balance": balance
     }
 
-def parse_text_line(line: str) -> Dict[str, Any]:
-    parts = line.split()
-    if len(parts) < 5:
-        return None
-    return {
-        'Date': parts[0],
-        'Description': ' '.join(parts[1:-3]),
-        'Debit Amt': parse_amount(parts[-3]),
-        'Credit Amt': parse_amount(parts[-2]),
-        'Balance': parse_amount(parts[-1])
-    }
+def parse_line(line: str) -> Dict[str, Any]:
+    """
+    Parse a line of text into a dictionary.
 
-def parse_amount(amount_str: str) -> float:
-    if amount_str == '':
-        return float('nan')
-    return float(amount_str.replace(',', '').replace('₹', '').strip())
+    Args:
+        line (str): A line of text from the PDF.
 
-def clean_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    df.columns = ['Date', 'Description', 'Debit Amt', 'Credit Amt', 'Balance']
-    df['Date'] = pd.to_datetime(df['Date'], errors='coerce').dt.strftime('%d-%m-%Y')
-    df['Debit Amt'] = pd.to_numeric(df['Debit Amt'], errors='coerce')
-    df['Credit Amt'] = pd.to_numeric(df['Credit Amt'], errors='coerce')
-    df['Balance'] = pd.to_numeric(df['Balance'], errors='coerce')
-    return df[['Date', 'Description', 'Debit Amt', 'Credit Amt', 'Balance']]
+    Returns:
+        Dict[str, Any]: A dictionary with parsed transaction details or empty if not valid.
+    """
+    # Example regex pattern, adjust according to actual line format
+    pattern = r'(\d{2}-\d{2}-\d{4})\s+(.+?)\s+([\d,]*\.?\d*)?\s+([\d,]*\.?\d*)?\s+([\d,]*\.?\d*)?'
+    match = re.match(pattern, line)
+    if match:
+        return {
+            "Date": match.group(1),
+            "Description": match.group(2),
+            "Debit Amt": match.group(3) if match.group(3) else '',
+            "Credit Amt": match.group(4) if match.group(4) else '',
+            "Balance": match.group(5) if match.group(5) else ''
+        }
+    return {}  # Return empty dict if line does not match the expected format

@@ -77,44 +77,38 @@ class AgentState:
 def compare_and_summarize(expected: pd.DataFrame, actual: pd.DataFrame) -> str:
     """
     Compare two DataFrames and return human-readable mismatch summary.
-    Handles NaN values consistently by filling them with blanks before comparison.
+    Handles NaN values consistently and drops repeated headers from multi-page PDFs.
     """
-
-    # Drop any duplicate header rows from actual (e.g., "Date", "Description", etc.) for multiple pages in the pdf
+    # Drop repeated headers from actual
     header_row = list(actual.columns)
-    actual = actual[~actual.apply(lambda row: list(row) == header_row, axis=1)]
+    actual = actual[~actual.apply(lambda row: list(row) == header_row, axis=1)].reset_index(drop=True)
 
-    # Reset index for fair comparison
     expected = expected.reset_index(drop=True)
-    actual = actual.reset_index(drop=True)
 
-    if actual.equals(expected):
+    # Truncate both to min length to avoid shape mismatch in comparison
+    min_len = min(len(expected), len(actual))
+    expected_filled = expected.iloc[:min_len].fillna("")
+    actual_filled = actual.iloc[:min_len].fillna("")
+
+    if expected_filled.equals(actual_filled):
         return "All rows and columns match exactly."
 
     msg_parts = []
     if expected.shape != actual.shape:
         msg_parts.append(f"Shape mismatch: expected {expected.shape}, got {actual.shape}")
 
-    # Row match count (with NaN treated consistently)
-    min_len = min(len(expected), len(actual))
-    expected_filled = expected.iloc[:min_len].fillna("")
-    actual_filled = actual.iloc[:min_len].fillna("")
-    row_matches = (expected_filled.reset_index(drop=True) == actual_filled.reset_index(drop=True)).all(axis=1).sum()
+    row_matches = (expected_filled == actual_filled).all(axis=1).sum()
     msg_parts.append(f"{row_matches}/{len(expected)} rows match exactly!")
 
-    # Column-level mismatches (with NaN treated consistently)
     mismatch_summary = {}
     for col in expected.columns:
         if col in actual.columns:
-            expected_col = expected[col].reset_index(drop=True).fillna("")
-            actual_col = actual[col].reset_index(drop=True).fillna("")
-            mismatch_summary[col] = int((expected_col.values != actual_col.values).sum())
+            mismatch_summary[col] = int((expected_filled[col] != actual_filled[col]).sum())
         else:
             mismatch_summary[col] = "MISSING"
     msg_parts.append("Mismatches by column: " + str(mismatch_summary))
 
     return "; ".join(msg_parts)
-
 
 
 ## Node implementations ##

@@ -25,9 +25,8 @@ codegen_template = PromptTemplate(
       - Prefer extracting tables when available.
       - If no valid table is found, fall back to line-based text extraction and parse transactions manually.
     - Combine results from all pages into a single pandas DataFrame.
-    - Handle repeated headers if they appear on multiple pages (skip duplicate header rows).
-    - After extraction, clean/transform the DataFrame so it exactly matches the CSV schema: {csv_schema}.
-    - Normalize all dates to match the format used in the provided CSV (do not always assume YYYY-MM-DD).
+    - **Remove repeated header rows** if they appear on multiple pages.
+    - Normalize **all dates to dd-mm-yyyy format** (Indian bank statements standard).
     - Preserve missing values (NaN) exactly as in the CSV — do not replace empty debit/credit cells with 0.0.
     - Convert amounts to floats where values exist, handle negatives correctly.
     - Ensure correct column order and datatypes.
@@ -38,6 +37,7 @@ codegen_template = PromptTemplate(
     - Do not include explanations or markdown.
     """
 )
+
 
 # Code correction prompt
 fixer_template = PromptTemplate(
@@ -60,11 +60,11 @@ fixer_template = PromptTemplate(
       - Prefer extracting tables when available.
       - If no valid table is found, fall back to line-based text extraction and parse transactions manually.
     - Combine results from all pages into a single pandas DataFrame.
-    - Handle repeated headers if they appear on subsequent pages (skip them).
+    - **Remove repeated header rows** if they appear on subsequent pages.
+    - Normalize **all dates to dd-mm-yyyy format** (Indian bank statements standard).
     - Preserve missing values (NaN) exactly as in the CSV — do not replace empty debit/credit cells with 0.0.
     - Use the mismatch details (row match count, per-column mismatches) to target fixes precisely.
     - Adjust the extraction/cleaning logic so the DataFrame matches the schema exactly: {csv_schema}.
-    - Normalize all dates to match the format used in the provided CSV (not always YYYY-MM-DD).
     - Convert amounts to floats where values exist, handle negatives correctly.
     - Preserve working parts of the code — make minimal necessary fixes.
     - Include type hints, docstrings, and maintain clean, modular code.
