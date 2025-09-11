@@ -1,9 +1,9 @@
-Bank Statement Parser Agent
+# Bank Statement Parser Agent
 
 This project implements a LangGraph-orchestrated agent that generates, tests, and fixes Python parsers for bank statements using LLMs. The agent loops through CodeGen → Executor → Tester → Fixer nodes until a parser passes all tests. It uses pdfplumber for PDF extraction, pandas for tabular processing, and caches successful parsers for reuse.
 __________________________________________________________________________________
 
-5-Step Run Instructions
+# 5-Step Run Instructions
 
 1.Set up environment
 
@@ -19,9 +19,9 @@ export OPENAI_API_KEY=your_api_key_here
 
 Add project root to PYTHONPATH (⚠️ important for imports):
 
-# macOS / Linux
+ macOS / Linux
 export PYTHONPATH=$(pwd)
-# Windows (PowerShell)
+Windows (PowerShell)
 setx PYTHONPATH "%cd%"
 
 
@@ -51,7 +51,7 @@ pytest -q test/test_icici_parser.py
 
 ________________________________________________________________________________
 
-Agent Diagram
+# Agent Diagram
 
 The agent consists of four main nodes orchestrated via LangGraph:
 
@@ -85,4 +85,3 @@ The workflow loops from Tester → Fixer → Executor until either the parser su
    └────────────────┘
 
 
--------------------------------------------------------------------------------------------
